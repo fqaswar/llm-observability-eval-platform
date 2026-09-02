@@ -5,7 +5,7 @@ automated evaluation suite that gates every pull request. The RAG app is deliber
 small — the point is the instrumentation around it: proving on every change whether the
 system hallucinates, what it costs, and where the time goes.
 
-**Status:** Phases 1–3 complete (RAG app + tracing + eval harness). Phases 4–6 pending.
+**Status:** Phases 1–4 complete (RAG app + tracing + eval harness + CI gate). Phases 5–6 pending.
 
 ## Architecture
 
@@ -173,6 +173,35 @@ Two helpers for working on the golden set, neither of which calls Claude:
 .venv310/bin/python -m scripts.peek "question"    # what does retrieval actually return?
 .venv310/bin/python -m scripts.probe_ragas        # is the judge wired up correctly?
 ```
+
+## CI quality gate
+
+`.github/workflows/eval.yml` runs the evaluation on every pull request and blocks the merge
+when a gated metric drops.
+
+| Gate | Threshold | Baseline |
+|---|---|---|
+| faithfulness | ≥ 0.85 | 0.924 |
+| context recall | ≥ 0.60 | 0.740 |
+| context precision | ≥ 0.50 | 0.636 |
+
+Thresholds sit just below the recorded baseline — low enough not to fire on ordinary judge
+variance, high enough to catch a real regression.
+
+Each run spins up a disposable `pgvector/pgvector:pg17` service container and ingests a
+40-page subset of the corpus. **CI never points at Supabase:** concurrent PRs would race on
+the same tables and exhaust the free tier's connection limit. Langfuse is disabled in CI —
+tracing is a local and demo concern.
+
+The workflow then posts a comment on the PR with each metric against `main`, the delta, and
+what the run cost. Pushes to `main` refresh the committed baseline that PR runs compare
+against.
+
+**Setup:** the repository needs one secret — `ANTHROPIC_API_KEY`, under
+Settings → Secrets and variables → Actions.
+
+**Cost:** roughly $0.16 per run. A `concurrency` block cancels superseded runs so a rapid
+series of pushes does not bill for every intermediate commit.
 
 ## Layout
 
