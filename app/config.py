@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     database_url: str = ""
 
     # --- Retrieval ---
-    # Phase 5 regression: drop to 1 and eval scores should fall.
+    # Chunks passed to the model per query. Lowering this is the quality
+    # regression the CI gate is calibrated to catch (see .github/workflows).
     rag_top_k: int = 5
     embedding_model: str = "BAAI/bge-base-en-v1.5"
     embedding_dim: int = 768  # must match embedding_model's output width
