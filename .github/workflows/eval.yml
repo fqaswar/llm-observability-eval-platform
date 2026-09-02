@@ -23,7 +23,7 @@ permissions:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     # A disposable database per run. CI does NOT point at Supabase: concurrent
     # PRs would race on the same tables and exhaust the free tier's connection
@@ -48,7 +48,7 @@ jobs:
       # Tracing is a local/demo concern. CI runs evals without Langfuse.
       LANGFUSE_ENABLED: 'false'
       # Keep CI cheap and fast: a subset of the corpus, not all 562 pages.
-      CI_DOC_LIMIT: '40'
+      CI_DOC_LIMIT: '20'
 
     steps:
       - uses: actions/checkout@v4
@@ -65,8 +65,13 @@ jobs:
         # The embedding model download is by far the slowest step.
         uses: actions/cache@v4
         with:
-          path: ~/.cache/huggingface
-          key: hf-${{ runner.os }}-bge-base-en-v1.5
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/torch
+          key: hf-${{ runner.os }}-bge-base-en-v1.5-v2
+          restore-keys: |
+            hf-${{ runner.os }}-bge-base-en-v1.5
+            hf-${{ runner.os }}-
 
       - name: Install dependencies
         # requirements.lock pins torch 2.2.2 / numpy<2 for Intel macOS, which

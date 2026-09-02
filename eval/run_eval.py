@@ -92,6 +92,8 @@ async def main() -> int:
     ap.add_argument("--top-k", type=int, help="override retrieval k")
     ap.add_argument("--trace", action="store_true", help="send traces to Langfuse")
     ap.add_argument("--out", default="eval/results/latest.json")
+    ap.add_argument("--concurrency", type=int, default=5,
+                    help="questions scored in parallel (4 judge calls each)")
     for m in METRIC_NAMES:
         ap.add_argument(f"--min-{m.replace('_', '-')}", type=float, default=None)
     args = ap.parse_args()
@@ -155,21 +157,32 @@ async def main() -> int:
         "context_recall": ContextRecall(llm=llm),
     }
 
-    scored = 0
-    for row in rows:
-        row.update(await score_row(row, metrics))
-        scored += 1
-        abbrev = {
-            "faithfulness": "faith",
-            "answer_relevancy": "relev",
-            "context_precision": "cprec",
-            "context_recall": "crecall",
-        }
+    abbrev = {
+        "faithfulness": "faith",
+        "answer_relevancy": "relev",
+        "context_precision": "cprec",
+        "context_recall": "crecall",
+    }
+
+    # Questions score independently, so run them concurrently. Sequentially this
+    # is ~93% of the wall clock (1326s of a 1428s run); the judge spends nearly
+    # all of that waiting on network. The semaphore keeps us inside the API rate
+    # limit — each question issues four judge calls.
+    sem = asyncio.Semaphore(args.concurrency)
+    done = 0
+
+    async def score_one(row):
+        nonlocal done
+        async with sem:
+            row.update(await score_row(row, metrics))
+        done += 1
         vals = " ".join(
             f"{abbrev[n]}={row[n]:.2f}" if row.get(n) is not None else f"{abbrev[n]}=--"
             for n in METRIC_NAMES
         )
-        print(f"  [{scored}/{len(rows)}] {row['id']:5} {vals}")
+        print(f"  [{done}/{len(rows)}] {row['id']:5} {vals}", flush=True)
+
+    await asyncio.gather(*(score_one(r) for r in rows))
 
     # --- 3. Aggregate ---
     # RAGAS scores a deliberately non-committal answer ("the docs don't cover
