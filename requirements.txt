@@ -19,8 +19,13 @@ httpx>=0.27
 python-dotenv>=1.0
 
 # --- Embeddings (see platform note above) ---
-numpy<2
-torch==2.2.2
+# The torch/numpy ceilings apply ONLY to x86_64 macOS. Linux and Apple Silicon
+# (including GitHub Actions runners) get current versions, which are faster and
+# still produce identical embeddings.
+numpy<2 ; sys_platform == 'darwin' and platform_machine == 'x86_64'
+torch==2.2.2 ; sys_platform == 'darwin' and platform_machine == 'x86_64'
+torch>=2.2 ; sys_platform != 'darwin'
+torch>=2.2 ; sys_platform == 'darwin' and platform_machine != 'x86_64'
 sentence-transformers>=3.0,<4
 
 # --- Phase 2: tracing ---
