@@ -203,6 +203,29 @@ Settings → Secrets and variables → Actions.
 **Cost:** roughly $0.16 per run. A `concurrency` block cancels superseded runs so a rapid
 series of pushes does not bill for every intermediate commit.
 
+## The regression catch
+
+The point of all the preceding machinery is that a change which looks fine in review gets
+stopped before it merges. To prove that, `regression/shrink-retrieval-context` makes exactly
+one edit:
+
+```diff
+- rag_top_k: int = 5
++ rag_top_k: int = 1
+```
+
+Retrieval now hands the model a single chunk instead of five. There is no syntax error, no
+failing unit test, nothing a reviewer skimming a one-line config change would catch. The
+answers stay fluent and confident — they are simply less often grounded in the right
+material.
+
+The eval gate catches it, the check goes red, and the PR comment shows the drop against
+`main`. The fix is then pushed to the same branch so the break, the detection, and the
+recovery all live in one thread.
+
+This is why `top_k` and the system prompt are configuration rather than literals: the demo
+is a one-line diff, which makes the causality obvious to anyone reading the PR.
+
 ## Layout
 
 ```
