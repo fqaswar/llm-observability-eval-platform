@@ -94,12 +94,24 @@ jobs:
 
       - name: Run evaluation
         id: eval
-        # Thresholds sit just below the recorded baseline: low enough not to
-        # fire on judge variance, high enough to catch a real regression.
+        # Thresholds were calibrated by running the eval against a known-bad
+        # build (top_k=1) and checking each gate actually fires:
+        #
+        #   metric              main    top_k=1   gate
+        #   faithfulness        0.924   0.923     0.85   (insensitive to this bug)
+        #   answer_relevancy    0.717   0.573     0.65   fires
+        #   context_recall      0.740   0.609     0.65   fires
+        #   context_precision   0.636   0.615     0.50   (insensitive)
+        #
+        # Recall and relevancy are the two that move when retrieval degrades, so
+        # both are gated. An earlier context_recall gate of 0.60 missed the
+        # regression by 0.009 — a gate is only worth having if you have watched
+        # it fail on a build you know to be broken.
         run: |
           python -m eval.run_eval \
             --min-faithfulness 0.85 \
-            --min-context-recall 0.60 \
+            --min-answer-relevancy 0.65 \
+            --min-context-recall 0.65 \
             --min-context-precision 0.50 \
             --out eval/results/pr.json
 
