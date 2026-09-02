@@ -1,0 +1,37 @@
+# Python 3.10 required — see the pins below.
+#
+# Platform constraints found on this machine (x86_64 macOS):
+#   * torch publishes no wheels for Python 3.13, and none past 2.2.2 for
+#     Intel macOS. That pins Python to 3.10/3.11 and torch to 2.2.2.
+#   * torch 2.2.2 is compiled against NumPy 1.x and crashes on import with
+#     NumPy 2.x, so numpy is held below 2.
+# On Apple Silicon or Linux (incl. GitHub Actions) these ceilings do not apply;
+# a newer torch/numpy pair is fine there.
+
+# --- Phase 1: RAG app ---
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic-settings>=2.6
+psycopg[binary,pool]>=3.2
+pgvector>=0.3.6
+anthropic>=1.0
+httpx>=0.27
+python-dotenv>=1.0
+
+# --- Embeddings (see platform note above) ---
+numpy<2
+torch==2.2.2
+sentence-transformers>=3.0,<4
+
+# --- Phase 2: tracing ---
+langfuse>=4.0
+
+# --- Phase 3: evaluation ---
+# ragas declares `langchain` with no upper bound, but 0.4.x imports module
+# paths that langchain 1.x moved. Unpinned, pip installs langchain 1.x and
+# every `import ragas` fails with ModuleNotFoundError. Hold langchain at 0.3.x.
+ragas>=0.4,<0.5
+langchain<1.0
+langchain-core<1.0
+langchain-community<0.4
+langchain-openai<1.0

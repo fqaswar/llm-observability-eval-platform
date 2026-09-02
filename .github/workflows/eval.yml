@@ -1,0 +1,178 @@
+name: RAG Evaluation
+
+# Runs the golden-set evaluation on every pull request and blocks the merge if
+# quality regresses. Also runs on pushes to main to refresh the stored baseline
+# that PR runs are compared against.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One run per branch; a new push cancels the in-flight run rather than
+  # queueing a second one that spends money on stale code.
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # A disposable database per run. CI does NOT point at Supabase: concurrent
+    # PRs would race on the same tables and exhaust the free tier's connection
+    # limit.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ragtest
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ragtest
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Tracing is a local/demo concern. CI runs evals without Langfuse.
+      LANGFUSE_ENABLED: 'false'
+      # Keep CI cheap and fast: a subset of the corpus, not all 562 pages.
+      CI_DOC_LIMIT: '40'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need main's baseline for the comparison step
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Cache HuggingFace models
+        # The embedding model download is by far the slowest step.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-bge-base-en-v1.5
+
+      - name: Install dependencies
+        # requirements.lock pins torch 2.2.2 / numpy<2 for Intel macOS, which
+        # Linux does not need; install the looser constraints instead.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify pgvector is available
+        run: |
+          pip install psycopg[binary]
+          python -c "
+          import psycopg, os
+          with psycopg.connect(os.environ['DATABASE_URL'], autocommit=True) as c:
+              c.execute('CREATE EXTENSION IF NOT EXISTS vector')
+              v = c.execute(\"select extversion from pg_extension where extname='vector'\").fetchone()
+              print('pgvector', v[0])
+          "
+
+      - name: Fetch corpus subset
+        run: python -m ingest.fetch_docs --limit ${{ env.CI_DOC_LIMIT }}
+
+      - name: Ingest
+        run: python -m ingest.ingest
+
+      - name: Run evaluation
+        id: eval
+        # Thresholds sit just below the recorded baseline: low enough not to
+        # fire on judge variance, high enough to catch a real regression.
+        run: |
+          python -m eval.run_eval \
+            --min-faithfulness 0.85 \
+            --min-context-recall 0.60 \
+            --min-context-precision 0.50 \
+            --out eval/results/pr.json
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval/results/pr*.json
+          retention-days: 30
+
+      - name: Comment results on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'eval/results/pr_summary.json';
+            if (!fs.existsSync(path)) {
+              core.warning('No eval summary produced — the run failed before scoring.');
+              return;
+            }
+            const cur = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+            // Compare against the baseline committed on main, when present.
+            let base = null;
+            try {
+              base = JSON.parse(fs.readFileSync('eval/results/latest_summary.json', 'utf8'));
+            } catch (e) { /* first run, or baseline not yet committed */ }
+
+            const arrow = (d) => d > 0.005 ? '🟢' : d < -0.005 ? '🔴' : '⚪';
+            const fmt = (v) => v === null || v === undefined ? 'n/a' : v.toFixed(4);
+
+            let rows = '';
+            for (const [k, v] of Object.entries(cur.scores)) {
+              const b = base?.scores?.[k];
+              if (b === undefined || b === null || v === null) {
+                rows += `| ${k} | ${fmt(v)} | — | — |\n`;
+              } else {
+                const d = v - b;
+                rows += `| ${k} | ${fmt(v)} | ${fmt(b)} | ${arrow(d)} ${d >= 0 ? '+' : ''}${d.toFixed(4)} |\n`;
+              }
+            }
+
+            const u = cur.usage, t = cur.timing;
+            const costLine = base?.usage
+              ? `$${u.app_cost_usd.toFixed(4)} (baseline $${base.usage.app_cost_usd.toFixed(4)})`
+              : `$${u.app_cost_usd.toFixed(4)}`;
+
+            const failed = '${{ steps.eval.outcome }}' === 'failure';
+            const body = [
+              `### ${failed ? '❌ Eval gate FAILED' : '✅ Eval gate passed'}`,
+              '',
+              '| metric | this PR | main | Δ |',
+              '|---|---|---|---|',
+              rows,
+              `**Cost:** ${costLine} · **Tokens:** ${u.input_tokens} in / ${u.output_tokens} out · **Wall:** ${t.total_secs}s`,
+              `**Config:** ${cur.config.model}, top_k=${cur.config.top_k}, ${cur.config.questions} questions`,
+              '',
+              failed ? '_A gated metric fell below its threshold. See the job log for which one._' : '',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Refresh baseline on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cp eval/results/pr.json eval/results/latest.json
+          cp eval/results/pr_summary.json eval/results/latest_summary.json
+          if ! git diff --quiet eval/results/; then
+            git config user.name  'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add eval/results/latest.json eval/results/latest_summary.json
+            git commit -m 'chore: refresh eval baseline [skip ci]'
+            git push
+          fi

@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+
+.venv/
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Fetched corpus — reproducible via `python -m ingest.fetch_docs`
+data/raw/
+
+# Eval outputs are committed on main only (CI compares against them)
+eval/results/*.json
+!eval/results/latest.json
+!eval/results/latest_summary.json
+
+.DS_Store
+.idea/
+.vscode/

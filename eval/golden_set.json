@@ -1,0 +1,169 @@
+{
+  "description": "Golden evaluation set for the Anthropic-docs RAG app. Every item carries a `reference` answer, which LLMContextRecall and ContextPrecisionWithReference both require. Facts were verified against the indexed corpus at authoring time; if the upstream docs change, re-verify with scripts/peek.py before trusting a failure.",
+  "corpus": "docs.claude.com, fetched via ingest/fetch_docs.py",
+  "authored": "2026-09-02",
+  "tag_meaning": {
+    "factual": "the answer is stated plainly in one document",
+    "synthesis": "requires combining or comparing facts across chunks",
+    "edge": "ambiguous, or the docs give a conditional/'it depends' answer",
+    "trap": "sounds answerable but the corpus does not contain the answer; the correct behaviour is to decline"
+  },
+  "questions": [
+    {
+      "id": "q01",
+      "question": "What context window sizes do Claude Sonnet 5 and Claude Haiku 4.5 have?",
+      "reference": "Claude Sonnet 5 has a 1M token context window; Claude Haiku 4.5 has 200K tokens.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q02",
+      "question": "How much does Claude Haiku 4.5 cost per million input tokens?",
+      "reference": "Claude Haiku 4.5 costs $1 per million input tokens and $5 per million output tokens.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q03",
+      "question": "What discount does the Message Batches API provide?",
+      "reference": "The Message Batches API costs 50% less than standard API calls for both input and output tokens.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q04",
+      "question": "How long are Message Batch results available for retrieval?",
+      "reference": "Batch results are available for 29 days after the batch is created, after which they expire.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q05",
+      "question": "What is the default cache lifetime for prompt caching?",
+      "reference": "The default cache TTL is 5 minutes, refreshed each time the cached content is used. A 1-hour TTL is also available at a higher write cost.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q06",
+      "question": "What is the minimum cacheable prompt length for Claude Haiku 4.5?",
+      "reference": "4,096 tokens. The minimum varies by model — for example 1,024 tokens for Claude Sonnet 5 and 512 tokens for Claude Opus 5.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q07",
+      "question": "What are the possible stop_reason values in a Messages API response?",
+      "reference": "end_turn, max_tokens, stop_sequence, tool_use, pause_turn, and refusal.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q08",
+      "question": "What model ID format do Claude models use from the 4.6 generation onward?",
+      "reference": "A dateless format, claude-{name}-{major}[-{minor}] — for example claude-sonnet-4-6 or claude-opus-5. Models before the 4.6 generation include a snapshot date, such as claude-haiku-4-5-20251001.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q09",
+      "question": "How do I count the tokens in a request before sending it?",
+      "reference": "Use the token counting endpoint, POST /v1/messages/count_tokens, which accepts the same model, messages, system and tools parameters as the Messages API and returns input_tokens. It is free to use.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q10",
+      "question": "What are the two ways to place cache breakpoints in a request?",
+      "reference": "Automatic caching, where a single top-level cache_control field lets the system manage breakpoints as the conversation grows; and explicit cache breakpoints, where cache_control is placed directly on individual content blocks for fine-grained control.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q11",
+      "question": "What is the maximum image dimension accepted by the API?",
+      "reference": "Images must be no larger than 8000x8000 pixels.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q12",
+      "question": "How does Claude ground its responses in source documents using citations?",
+      "reference": "Claude can provide detailed citations when answering questions about documents. Citations return the exact passages that support each claim, so answers can be verified and sources surfaced to users.",
+      "tags": ["factual"]
+    },
+    {
+      "id": "q13",
+      "question": "What is the difference between context editing and compaction?",
+      "reference": "Context editing clears old content — such as tool results or thinking blocks — from the conversation before the model sees it. Compaction instead summarizes earlier context when the conversation approaches a token threshold. Editing removes; compaction condenses.",
+      "tags": ["synthesis"]
+    },
+    {
+      "id": "q14",
+      "question": "Which is cheaper for a large non-urgent workload: the Batches API or prompt caching?",
+      "reference": "Both reduce cost but in different ways. The Batches API gives a flat 50% discount on input and output tokens for asynchronous work completed within 24 hours. Prompt caching reduces the cost of repeated prefixes, with cache reads far cheaper than base input tokens. They address different situations and can be combined.",
+      "tags": ["synthesis"]
+    },
+    {
+      "id": "q15",
+      "question": "How does prompt caching interact with a changing system prompt?",
+      "reference": "Caching matches on an exact prefix, so any change to the system prompt invalidates the cache from that point onward. Stable content should be placed first and volatile content — timestamps or per-request identifiers — after the last cache breakpoint.",
+      "tags": ["synthesis"]
+    },
+    {
+      "id": "q16",
+      "question": "What is the difference between a deprecated model and a retired model in the model lifecycle?",
+      "reference": "A deprecated model is still functional but no longer recommended; Anthropic provides a recommended replacement and assigns a retirement date. A retired model is no longer available at all, and requests to it will fail.",
+      "tags": ["synthesis"]
+    },
+    {
+      "id": "q17",
+      "question": "Should I use streaming for a request with a large max_tokens?",
+      "reference": "Yes. Large max_tokens values on a non-streaming request risk hitting HTTP timeouts, so streaming is required or strongly recommended for very large outputs.",
+      "tags": ["edge"]
+    },
+    {
+      "id": "q18",
+      "question": "Is a dateless model ID like claude-sonnet-4-6 an alias that always points to the newest model?",
+      "reference": "No. For the 4.6 generation and later the dateless ID is the canonical ID for a single fixed snapshot, not an evergreen pointer. Anthropic ships updated versions under new model IDs. Aliases in that sense existed only for earlier models.",
+      "tags": ["edge"]
+    },
+    {
+      "id": "q19",
+      "question": "Can I use both 1-hour and 5-minute cache controls in the same request?",
+      "reference": "Yes, both TTLs can be used in a single request, subject to constraints on how the breakpoints are ordered.",
+      "tags": ["edge"]
+    },
+    {
+      "id": "q20",
+      "question": "Does prompt caching work on every model?",
+      "reference": "Prompt caching is supported broadly, but the minimum cacheable prefix length differs by model — for example 4,096 tokens for Claude Haiku 4.5 and 512 tokens for Claude Opus 5. Prompts shorter than the model's minimum are silently not cached.",
+      "tags": ["edge"]
+    },
+    {
+      "id": "q21",
+      "question": "What is Anthropic's employee headcount?",
+      "reference": "The documentation provided does not cover this. The Claude developer documentation describes the API and models, not company information.",
+      "tags": ["trap"]
+    },
+    {
+      "id": "q22",
+      "question": "What is the exact training data cutoff date for Claude Haiku 4.5?",
+      "reference": "The documentation provided does not cover this.",
+      "tags": ["trap"]
+    },
+    {
+      "id": "q23",
+      "question": "How do I fine-tune a Claude model on my own dataset?",
+      "reference": "The documentation provided does not cover this. Fine-tuning is not among the customization options described in the Claude developer documentation.",
+      "tags": ["trap"]
+    },
+    {
+      "id": "q24",
+      "question": "What is the per-request price of the claude-quantum-7 model?",
+      "reference": "The documentation provided does not cover this. No model by that name appears in the documentation, and pricing is quoted per million tokens rather than per request.",
+      "tags": ["trap"]
+    },
+    {
+      "id": "q25",
+      "question": "How many GPUs does Anthropic use to serve Claude Opus 5?",
+      "reference": "The documentation provided does not cover this. Serving infrastructure details are not part of the developer documentation.",
+      "tags": ["trap"]
+    },
+    {
+      "id": "q26",
+      "question": "What is the refund policy for unused prepaid API credits?",
+      "reference": "The documentation provided does not cover this.",
+      "tags": ["trap"]
+    }
+  ]
+}
