@@ -11,10 +11,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One run per branch; a new push cancels the in-flight run rather than
-  # queueing a second one that spends money on stale code.
+  # One run per branch. A new push supersedes an in-flight run rather than
+  # queueing a second one that spends money on stale code — but never cancel
+  # a pull_request run: the eval takes long enough that a cancellation loses
+  # the scores and leaves the PR with no comment and an unexplained red X.
   group: eval-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'pull_request' }}
 
 permissions:
   contents: write        # the baseline-refresh step pushes to main
@@ -114,6 +116,7 @@ jobs:
         # it fail on a build you know to be broken.
         run: |
           python -m eval.run_eval \
+            --concurrency 12 \
             --min-faithfulness 0.85 \
             --min-answer-relevancy 0.65 \
             --min-context-recall 0.65 \
@@ -136,7 +139,16 @@ jobs:
             const fs = require('fs');
             const path = 'eval/results/pr_summary.json';
             if (!fs.existsSync(path)) {
-              core.warning('No eval summary produced — the run failed before scoring.');
+              // The eval was cancelled or errored before writing its summary.
+              // Say so on the PR: a red X with no explanation is worse than none.
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner, repo: context.repo.repo,
+                body: '### ⚠️ Eval did not complete\n\nNo scores were produced — the '
+                    + 'evaluation step was cancelled or failed before scoring. '
+                    + 'See the job log; this is not a quality signal either way.',
+              });
+              core.warning('No eval summary produced.');
               return;
             }
             const cur = JSON.parse(fs.readFileSync(path, 'utf8'));
